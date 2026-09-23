@@ -1,19 +1,24 @@
 import { useState, useEffect } from 'react'
 import { ChevronRight, Cpu, Fuel, Clock } from 'lucide-react'
-import { getMachines } from '../api/client.js'
+import { getMachines, getFleetAudit } from '../api/client.js'
 import StatusBadge from '../components/StatusBadge.jsx'
 import ScoreRing from '../components/ScoreRing.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import ErrorState from '../components/ErrorState.jsx'
+import FleetAuditCard from '../components/FleetAuditCard.jsx'
 
 export default function FleetPage({ onSelect }) {
   const [machines, setMachines] = useState([])
+  const [audit, setAudit]       = useState(null)
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
 
   const load = async () => {
     setLoading(true); setError(null)
-    try { setMachines(await getMachines()) }
+    try {
+      const [m, a] = await Promise.all([getMachines(), getFleetAudit()])
+      setMachines(m); setAudit(a)
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -46,6 +51,9 @@ export default function FleetPage({ onSelect }) {
       {normal.length > 0 && (
         <Section title="Normal" color="border-green-500" machines={normal} onSelect={onSelect} />
       )}
+
+      {/* Feature 8 — Fleet attribution audit */}
+      {audit && <FleetAuditCard data={audit} />}
     </div>
   )
 }

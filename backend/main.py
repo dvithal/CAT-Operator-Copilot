@@ -17,6 +17,7 @@ from backend.routers import support_router
 from backend.routers import reports_router
 from backend.routers import training_router
 from backend.routers import copilot_router
+from backend.routers import intelligence_router
 
 # ============================================================
 # APP
@@ -48,6 +49,7 @@ app.include_router(support_router.router)
 app.include_router(reports_router.router)
 app.include_router(training_router.router)
 app.include_router(copilot_router.router)
+app.include_router(intelligence_router.router)
 
 
 # ============================================================

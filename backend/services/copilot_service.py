@@ -381,6 +381,9 @@ def process_message(message: str, machine_id: str | None = None,
 
     response_text = _synthesise(message, tool_results, machine_id)
 
+    # Feature 10 — structured evidence panel
+    evidence = _build_evidence_panel(tool_results)
+
     return {
         "message": message,
         "machine_id": machine_id,
@@ -389,5 +392,162 @@ def process_message(message: str, machine_id: str | None = None,
         "response": response_text,
         "tools_called": [{"tool": r["tool"], "args": r["args"]} for r in tool_results],
         "tool_results_count": len(tool_results),
+        "evidence": evidence,
         "timestamp": datetime.now().isoformat(),
+    }
+
+
+# ============================================================
+# FEATURE 10 — EVIDENCE PANEL BUILDER
+# ============================================================
+
+def _build_evidence_panel(tool_results: list[dict]) -> dict:
+    """
+    Build a structured evidence panel for the Copilot response UI.
+    Distinguishes OBSERVED / MODEL_OUTPUT / MODEL_EXPLANATION / RECOMMENDATION.
+    """
+    observed       = []
+    model_output   = []
+    model_explanation = []
+    recommendations   = []
+    sources_used      = []
+
+    for r in tool_results:
+        tool   = r["tool"]
+        result = r.get("result", {})
+        if not isinstance(result, dict):
+            continue
+        sources_used.append(tool)
+
+        if tool == "get_current_context":
+            m = result.get("machine", {})
+            w = result.get("weather", {}).get("current", {})
+            if m:
+                observed.append({"label": "Machine status",    "value": m.get("status", "—"), "source": tool})
+                observed.append({"label": "Seatbelt",          "value": m.get("seatbelt_status", "—"), "source": tool})
+                observed.append({"label": "Engine hours",      "value": m.get("engine_hours", "—"), "source": tool})
+                observed.append({"label": "Idle time",         "value": f"{m.get('idling_time_min','—')} min", "source": tool})
+            if w:
+                observed.append({"label": "Current weather",   "value": w.get("condition", "—"), "source": tool})
+
+        elif tool == "get_safety_status":
+            observed.append({"label": "Safety alert",      "value": result.get("safety_alert", "—"), "source": tool})
+            observed.append({"label": "Seatbelt status",   "value": result.get("seatbelt_status", "—"), "source": tool})
+            model_output.append({
+                "label":  "Safety score",
+                "value":  f"{result.get('safety_score', '—')}/100",
+                "detail": result.get("decision", "—"),
+                "source": "deterministic_safety_engine",
+            })
+            for rec in result.get("recommendations", [])[:2]:
+                recommendations.append({"text": rec, "source": "safety_engine", "priority": "HIGH"})
+
+        elif tool in ("get_task_eta", "explain_task_eta"):
+            eta = result.get("eta", result)
+            if eta.get("predicted_time_min"):
+                model_output.append({
+                    "label":  "Predicted ETA",
+                    "value":  f"{eta.get('predicted_time_min','—'):.0f} min",
+                    "detail": f"Estimate: {eta.get('baseline_time_min','—')} min  |  Δ {eta.get('difference_min',0):+.1f} min",
+                    "source": "eta_linear_regression_v1",
+                })
+                unc = result.get("uncertainty_range") or {}
+                if unc:
+                    model_output.append({
+                        "label":  "Uncertainty interval",
+                        "value":  f"{unc.get('lower','—'):.0f}–{unc.get('upper','—'):.0f} min",
+                        "detail": "Empirical residual interval",
+                        "source": "eta_uncertainty_v1",
+                    })
+            for f in result.get("top_factors", [])[:3]:
+                if f.get("impact", 0) > 0:
+                    model_explanation.append({
+                        "label":  f["feature"],
+                        "value":  f.get("value", "—"),
+                        "contribution": f"{f.get('model_contribution_min', f.get('impact',0)):+.1f} min",
+                        "direction": f.get("direction", "neutral"),
+                        "attribution_type": f.get("attribution_type", "approximate"),
+                        "source": "xai_eta",
+                    })
+            if result.get("recommended_action"):
+                act = result["recommended_action"]
+                for s in act.get("steps", [])[:2]:
+                    recommendations.append({"text": s, "source": "eta_action_layer", "priority": act.get("priority", "LOW")})
+
+        elif tool in ("get_behavior_anomaly", "explain_behavior"):
+            if result.get("prediction") == "anomaly":
+                model_output.append({
+                    "label":  "Behavior prediction",
+                    "value":  "ANOMALY",
+                    "detail": f"Severity: {result.get('severity','—')}  |  Score: {result.get('anomaly_score','—')}",
+                    "source": "isolation_forest_v1 + operator_mad_baseline",
+                })
+                for f in result.get("top_factors", [])[:3]:
+                    model_explanation.append({
+                        "label":  f["feature"],
+                        "value":  f"{f.get('current_value','—'):.2f} vs baseline {f.get('baseline_median','—'):.2f}",
+                        "contribution": f"{f.get('deviation_mad',0):.1f}× MAD",
+                        "direction": f.get("direction", "neutral"),
+                        "attribution_type": "operator_mad_baseline",
+                        "source": "xai_behavior",
+                    })
+                if result.get("recommended_action"):
+                    act = result["recommended_action"]
+                    for s in act.get("steps", [])[:2]:
+                        recommendations.append({"text": s, "source": "behavior_action_layer", "priority": act.get("priority", "MEDIUM")})
+            else:
+                model_output.append({
+                    "label":  "Behavior prediction",
+                    "value":  "NORMAL",
+                    "detail": "Within operator baseline parameters",
+                    "source": "isolation_forest_v1 + operator_mad_baseline",
+                })
+
+        elif tool == "get_weather_risk":
+            cond = result.get("current_condition", "—")
+            risk = result.get("current_risk_level", "—")
+            observed.append({"label": "Weather condition",  "value": cond, "source": tool})
+            model_output.append({
+                "label":  "Weather risk level",
+                "value":  risk,
+                "detail": f"Risk score: {result.get('current_risk_score','—')}",
+                "source": "weather_impact_v1",
+            })
+            if result.get("overlap_advisory"):
+                recommendations.append({
+                    "text":     result["overlap_advisory"],
+                    "source":   "weather_risk_engine",
+                    "priority": "MEDIUM",
+                })
+
+        elif tool == "get_machine_health":
+            model_output.append({
+                "label":  "Machine health",
+                "value":  f"{result.get('health_score','—')}/100",
+                "detail": result.get("health_status", "—"),
+                "source": "rule_based_health_indicators",
+            })
+            if result.get("recommended_action"):
+                act = result["recommended_action"]
+                for s in act.get("steps", [])[:1]:
+                    recommendations.append({"text": s, "source": "health_action_layer", "priority": act.get("priority","LOW")})
+
+    # Deduplicate recommendations
+    seen_recs = set()
+    unique_recs = []
+    for rec in recommendations:
+        if rec["text"] not in seen_recs:
+            seen_recs.add(rec["text"])
+            unique_recs.append(rec)
+
+    return {
+        "observed":            observed,
+        "model_output":        model_output,
+        "model_explanation":   model_explanation,
+        "recommendations":     unique_recs,
+        "sources_used":        sources_used,
+        "evidence_note": (
+            "All evidence is sourced from structured backend data and ML model outputs. "
+            "No information has been fabricated."
+        ),
     }

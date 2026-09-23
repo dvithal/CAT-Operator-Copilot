@@ -1,44 +1,62 @@
 import { useState, useEffect } from 'react'
-import { Activity, ShieldCheck, Clock, Fuel, Timer, Brain, AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import { getContext, getXAITask, getXAIBehavior, getXAIMachine, getWeatherRisk } from '../api/client.js'
-import KpiCard from '../components/KpiCard.jsx'
-import StatusBadge from '../components/StatusBadge.jsx'
-import ScoreRing from '../components/ScoreRing.jsx'
-import LoadingSpinner from '../components/LoadingSpinner.jsx'
-import ErrorState from '../components/ErrorState.jsx'
-
-function FactorBar({ label, value, impact, direction }) {
-  const color = direction === 'increase' ? 'bg-red-500' : direction === 'decrease' ? 'bg-green-500' : 'bg-surface-400'
-  const pct = Math.min(100, Math.abs(impact || 0) * 10)
-  const Icon = direction === 'increase' ? TrendingUp : direction === 'decrease' ? TrendingDown : Minus
-  return (
-    <div className="flex items-center gap-3">
-      <Icon size={12} className={direction === 'increase' ? 'text-red-400' : direction === 'decrease' ? 'text-green-400' : 'text-surface-200'} />
-      <div className="flex-1 min-w-0">
-        <div className="flex justify-between text-xs mb-1">
-          <span className="text-gray-300 truncate">{label}</span>
-          <span className="text-surface-100 ml-2">{value}</span>
-        </div>
-        <div className="h-1.5 bg-surface-500 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-    </div>
-  )
-}
+import { Activity, ShieldCheck, Clock, Fuel, Timer, Brain, AlertTriangle } from 'lucide-react'
+import {
+  getContext, getXAITask, getXAIBehavior, getXAIMachine, getWeatherRisk,
+  getTimeline, getModelTransparency,
+} from '../api/client.js'
+import KpiCard               from '../components/KpiCard.jsx'
+import StatusBadge           from '../components/StatusBadge.jsx'
+import ScoreRing             from '../components/ScoreRing.jsx'
+import LoadingSpinner        from '../components/LoadingSpinner.jsx'
+import ErrorState            from '../components/ErrorState.jsx'
+import AttributionFactorBar  from '../components/AttributionFactorBar.jsx'
+import ActionCard            from '../components/ActionCard.jsx'
+import ShiftTimeline         from '../components/ShiftTimeline.jsx'
+import ModelTransparencyPanel from '../components/ModelTransparencyPanel.jsx'
+import FeedbackButtons       from '../components/FeedbackButtons.jsx'
 
 function SectionLabel({ children }) {
   return <div className="section-title">{children}</div>
 }
 
+function Row({ label, value, sub, highlight }) {
+  return (
+    <div className="flex items-start justify-between gap-2 text-sm">
+      <span className="text-surface-100 shrink-0">{label}</span>
+      <div className="text-right min-w-0">
+        <div className={highlight ? 'text-red-400 font-semibold' : 'text-gray-200'}>{value ?? '—'}</div>
+        {sub && <div className="text-xs text-surface-100">{sub}</div>}
+      </div>
+    </div>
+  )
+}
+
+function PredBlock({ title, value, sub, status }) {
+  const color = {
+    NORMAL: 'border-green-700/40 bg-green-900/10', GOOD: 'border-green-700/40 bg-green-900/10',
+    CAUTION: 'border-amber-700/40 bg-amber-900/10', ATTENTION: 'border-amber-700/40 bg-amber-900/10',
+    CRITICAL: 'border-red-700/40 bg-red-900/10', ANOMALY: 'border-red-700/40 bg-red-900/10',
+    HIGH: 'border-red-700/40 bg-red-900/10', MEDIUM: 'border-amber-700/40 bg-amber-900/10',
+  }[status?.toUpperCase()] || 'border-surface-500 bg-surface-600'
+  return (
+    <div className={`border rounded-lg p-3 space-y-1 ${color}`}>
+      <div className="text-xs text-surface-100 uppercase tracking-wider">{title}</div>
+      <div className="font-semibold text-white">{value}</div>
+      {sub && <div className="text-xs text-surface-100">{sub}</div>}
+    </div>
+  )
+}
+
 export default function CommandCenter({ machineId }) {
-  const [ctx, setCtx]         = useState(null)
-  const [etaXAI, setEtaXAI]   = useState(null)
-  const [behXAI, setBehXAI]   = useState(null)
-  const [mchXAI, setMchXAI]   = useState(null)
-  const [wxRisk, setWxRisk]   = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState(null)
+  const [ctx, setCtx]           = useState(null)
+  const [etaXAI, setEtaXAI]     = useState(null)
+  const [behXAI, setBehXAI]     = useState(null)
+  const [mchXAI, setMchXAI]     = useState(null)
+  const [wxRisk, setWxRisk]     = useState(null)
+  const [timeline, setTimeline] = useState([])
+  const [transparency, setTransparency] = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState(null)
 
   const load = async () => {
     setLoading(true); setError(null)
@@ -48,22 +66,22 @@ export default function CommandCenter({ machineId }) {
       const taskId = context?.task?.task_id
       const etaMin = context?.task_prediction?.predicted_time_min
 
-      const [beh, mch, wx] = await Promise.all([
+      const [beh, mch, wx, tl, tr] = await Promise.all([
         getXAIBehavior(machineId),
         getXAIMachine(machineId),
         getWeatherRisk(machineId, etaMin),
+        getTimeline(machineId).then(r => r.events || []),
+        getModelTransparency(),
       ])
       setBehXAI(beh); setMchXAI(mch); setWxRisk(wx)
+      setTimeline(tl); setTransparency(tr)
 
       if (taskId) {
         const eta = await getXAITask(taskId)
         setEtaXAI(eta)
       }
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [machineId])
@@ -101,65 +119,44 @@ export default function CommandCenter({ machineId }) {
           </div>
         </div>
         <div className="flex items-center gap-4 shrink-0">
-          <ScoreRing score={safetyScore} label="Safety"  size={72} />
-          <ScoreRing score={healthScore} label="Health"  size={72} />
+          <ScoreRing score={safetyScore} label="Safety" size={72} />
+          <ScoreRing score={healthScore} label="Health" size={72} />
         </div>
       </div>
 
       {/* ── KPI row ────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard label="Machine Health"  value={healthScore}              unit="/100"  icon={Activity}   status={mchXAI?.health_status} />
-        <KpiCard label="Safety Score"    value={safetyScore}              unit="/100"  icon={ShieldCheck} status={s.safety_status} />
+        <KpiCard label="Machine Health"  value={healthScore}                          unit="/100" icon={Activity}   status={mchXAI?.health_status} />
+        <KpiCard label="Safety Score"    value={safetyScore}                          unit="/100" icon={ShieldCheck} status={s.safety_status} />
         <KpiCard label="Task ETA"        value={eta.predicted_time_min?.toFixed(0) ?? '—'} unit="min" icon={Clock} status={etaDiff > 5 ? 'CAUTION' : 'NORMAL'} sub={eta.predicted_time_min ? `${etaSign} min vs estimate` : null} />
-        <KpiCard label="Fuel Level"      value={m.fuel_level_pct ?? '—'}  unit="%"     icon={Fuel}       status={m.fuel_level_pct < 20 ? 'CRITICAL' : 'NORMAL'} />
-        <KpiCard label="Idle Time"       value={m.idling_time_min ?? '—'} unit="min"   icon={Timer}      status={m.idling_time_min > 40 ? 'CAUTION' : 'NORMAL'} />
-        <KpiCard label="Behavior"        value={beh.anomaly ? 'ANOMALY' : 'NORMAL'}    icon={Brain}      status={beh.anomaly ? 'ANOMALY' : 'NORMAL'} />
+        <KpiCard label="Fuel Level"      value={m.fuel_level_pct ?? '—'}              unit="%" icon={Fuel}        status={m.fuel_level_pct < 20 ? 'CRITICAL' : 'NORMAL'} />
+        <KpiCard label="Idle Time"       value={m.idling_time_min ?? '—'}             unit="min" icon={Timer}     status={m.idling_time_min > 40 ? 'CAUTION' : 'NORMAL'} />
+        <KpiCard label="Behavior"        value={beh.anomaly ? 'ANOMALY' : 'NORMAL'}             icon={Brain}     status={beh.anomaly ? 'ANOMALY' : 'NORMAL'} />
       </div>
 
-      {/* ── Context + Predictions ──────────────────────────── */}
+      {/* ── Context + Predictions + What Next ──────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* Current Context */}
         <div className="card space-y-4">
           <SectionLabel>Current Context</SectionLabel>
-          <Row label="Machine"     value={`${m.machine_type} — ${machineId}`} />
-          <Row label="Model"       value={m.model} />
-          <Row label="Operator"    value={op.name}       sub={op.skill_level} />
-          <Row label="Task"        value={t.task_type || 'None'} />
-          <Row label="Phase"       value={t.phase || '—'} />
-          <Row label="Weather"     value={w.condition}   sub={`${w.temperature_c ?? '—'}°C · Wind ${w.wind_kph ?? '—'} kph`} />
-          <Row label="Engine Hrs"  value={m.engine_hours} />
-          <Row label="Seatbelt"    value={m.seatbelt_status} highlight={m.seatbelt_status === 'Unfastened'} />
+          <Row label="Machine"    value={`${m.machine_type} — ${machineId}`} />
+          <Row label="Model"      value={m.model} />
+          <Row label="Operator"   value={op.name}      sub={op.skill_level} />
+          <Row label="Task"       value={t.task_type || 'None'} />
+          <Row label="Phase"      value={t.phase || '—'} />
+          <Row label="Weather"    value={w.condition}  sub={`${w.temperature_c ?? '—'}°C · Wind ${w.wind_kph ?? '—'} kph`} />
+          <Row label="Engine Hrs" value={m.engine_hours} />
+          <Row label="Seatbelt"   value={m.seatbelt_status} highlight={m.seatbelt_status === 'Unfastened'} />
         </div>
 
         {/* Predictions */}
         <div className="card space-y-4">
           <SectionLabel>ML Predictions</SectionLabel>
-
-          <PredBlock
-            title="Task ETA"
-            value={eta.predicted_time_min ? `${eta.predicted_time_min.toFixed(0)} min` : 'N/A'}
-            sub={eta.baseline_time_min ? `Estimate: ${eta.baseline_time_min} min  (${etaSign} min)` : null}
-            status={etaDiff > 5 ? 'CAUTION' : 'NORMAL'}
-          />
-          <PredBlock
-            title="Behavior Anomaly"
-            value={beh.anomaly ? 'ANOMALY DETECTED' : 'NORMAL'}
-            sub={beh.anomaly ? `Score: ${beh.anomaly_score}` : 'Operating within baseline'}
-            status={beh.anomaly ? 'CRITICAL' : 'NORMAL'}
-          />
-          <PredBlock
-            title="Machine Health"
-            value={`${healthScore}/100`}
-            sub={mchXAI?.health_status}
-            status={mchXAI?.health_status}
-          />
-          <PredBlock
-            title="Weather Risk"
-            value={wxRisk?.current_risk_level ?? '—'}
-            sub={wxRisk?.current_condition}
-            status={wxRisk?.current_risk_level === 'HIGH' ? 'CRITICAL' : wxRisk?.current_risk_level === 'MEDIUM' ? 'CAUTION' : 'NORMAL'}
-          />
+          <PredBlock title="Task ETA"       value={eta.predicted_time_min ? `${eta.predicted_time_min.toFixed(0)} min` : 'N/A'}  sub={eta.baseline_time_min ? `Estimate: ${eta.baseline_time_min} min  (${etaSign} min)` : null} status={etaDiff > 5 ? 'CAUTION' : 'NORMAL'} />
+          <PredBlock title="Behavior"       value={beh.anomaly ? 'ANOMALY DETECTED' : 'NORMAL'} sub={beh.anomaly ? `Score: ${beh.anomaly_score}` : 'Within baseline'} status={beh.anomaly ? 'CRITICAL' : 'NORMAL'} />
+          <PredBlock title="Machine Health" value={`${healthScore}/100`} sub={mchXAI?.health_status} status={mchXAI?.health_status} />
+          <PredBlock title="Weather Risk"   value={wxRisk?.current_risk_level ?? '—'} sub={wxRisk?.current_condition} status={wxRisk?.current_risk_level === 'HIGH' ? 'CRITICAL' : wxRisk?.current_risk_level === 'MEDIUM' ? 'CAUTION' : 'NORMAL'} />
         </div>
 
         {/* What Happens Next */}
@@ -179,9 +176,7 @@ export default function CommandCenter({ machineId }) {
           {wxRisk?.worst_upcoming_condition && (
             <div className="text-sm space-y-1">
               <div className="text-surface-100 text-xs">Worst upcoming condition</div>
-              <div className="font-medium text-gray-200">
-                {wxRisk.worst_upcoming_condition.condition} @ {wxRisk.worst_upcoming_condition.time}
-              </div>
+              <div className="font-medium text-gray-200">{wxRisk.worst_upcoming_condition.condition} @ {wxRisk.worst_upcoming_condition.time}</div>
             </div>
           )}
           {beh.anomaly && (
@@ -191,9 +186,7 @@ export default function CommandCenter({ machineId }) {
             </div>
           )}
           {s.recommendations?.slice(0, 2).map((r, i) => (
-            <div key={i} className="bg-surface-600 rounded-lg p-3 text-xs text-gray-300">
-              {r}
-            </div>
+            <div key={i} className="bg-surface-600 rounded-lg p-3 text-xs text-gray-300">{r}</div>
           ))}
           {!wxRisk?.task_weather_overlap && !beh.anomaly && !s.recommendations?.length && (
             <div className="text-sm text-surface-100">No immediate risks detected.</div>
@@ -201,82 +194,89 @@ export default function CommandCenter({ machineId }) {
         </div>
       </div>
 
-      {/* ── XAI Explanation Cards ──────────────────────────── */}
+      {/* ── XAI + Actions ──────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 
-        {/* ETA XAI */}
+        {/* Feature 1+2 — ETA XAI + Action */}
         {etaXAI && !etaXAI.error && (
           <div className="card space-y-3">
-            <SectionLabel>Why is ETA {etaDiff >= 0 ? 'longer' : 'shorter'}?</SectionLabel>
+            <SectionLabel>Why is ETA {etaDiff >= 0 ? 'longer' : 'shorter'}? — Model Attribution</SectionLabel>
             <p className="text-xs text-surface-100 leading-relaxed">{etaXAI.explanation}</p>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {etaXAI.top_factors?.filter(f => f.impact > 0).slice(0, 4).map((f, i) => (
-                <FactorBar key={i} label={f.feature} value={f.value} impact={f.impact} direction={f.direction} />
+                <AttributionFactorBar key={i} factor={f} />
               ))}
             </div>
+            {etaXAI.attribution_note && (
+              <p className="text-xs text-surface-200 italic">{etaXAI.attribution_note}</p>
+            )}
+            <ActionCard action={etaXAI.recommended_action} title="What Should I Do?" />
           </div>
         )}
 
-        {/* Behavior XAI */}
+        {/* Feature 1+2+3+4 — Behavior XAI + Action + Feedback */}
         {behXAI && !behXAI.error && (
           <div className="card space-y-3">
-            <SectionLabel>Behavior Analysis</SectionLabel>
+            <SectionLabel>Behavior Analysis — Model Attribution</SectionLabel>
             <p className="text-xs text-surface-100 leading-relaxed">{behXAI.explanation}</p>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {behXAI.top_factors?.slice(0, 4).map((f, i) => (
-                <FactorBar key={i} label={f.feature} value={`${f.current_value} vs ${f.baseline_median}`} impact={f.impact} direction={f.direction} />
+                <AttributionFactorBar key={i} factor={f} />
               ))}
             </div>
+
+            {/* Feature 4 — context analysis */}
+            {behXAI.context_analysis?.context_factors?.length > 0 && (
+              <div className="bg-surface-600 rounded-lg p-3 space-y-1.5">
+                <div className="text-xs text-blue-400 font-semibold">Context Analysis</div>
+                {behXAI.context_analysis.context_factors.slice(0, 2).map((cf, i) => (
+                  <div key={i} className="text-xs text-gray-300">· {cf.label}: {cf.note}</div>
+                ))}
+                <p className="text-xs text-surface-200 italic">{behXAI.context_analysis.interpretation}</p>
+              </div>
+            )}
+
+            <ActionCard action={behXAI.recommended_action} title="What Should I Do?" />
+
+            {/* Feature 3 — feedback */}
+            {behXAI.prediction === 'anomaly' && (
+              <div>
+                <div className="text-xs text-surface-100 mb-2">Operator Feedback</div>
+                <FeedbackButtons machineId={machineId} eventType="anomaly" eventId={`${machineId}-beh`} />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Health XAI */}
+        {/* Health XAI + Action */}
         {mchXAI && !mchXAI.error && (
           <div className="card space-y-3">
             <SectionLabel>Machine Health Factors</SectionLabel>
             <p className="text-xs text-surface-100 leading-relaxed">{mchXAI.explanation}</p>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {mchXAI.top_factors?.slice(0, 4).map((f, i) => (
-                <FactorBar key={i} label={f.feature} value={f.value} impact={f.impact} direction={f.direction} />
+                <AttributionFactorBar key={i} factor={f} />
               ))}
             </div>
-            <div className="text-xs text-surface-200 italic">{mchXAI.note}</div>
+            <p className="text-xs text-surface-200 italic">{mchXAI.attribution_note}</p>
+            <ActionCard action={mchXAI.recommended_action} title="What Should I Do?" />
           </div>
         )}
       </div>
-    </div>
-  )
-}
 
-function Row({ label, value, sub, highlight }) {
-  return (
-    <div className="flex items-start justify-between gap-2 text-sm">
-      <span className="text-surface-100 shrink-0">{label}</span>
-      <div className="text-right min-w-0">
-        <div className={highlight ? 'text-red-400 font-semibold' : 'text-gray-200'}>{value ?? '—'}</div>
-        {sub && <div className="text-xs text-surface-100">{sub}</div>}
-      </div>
-    </div>
-  )
-}
+      {/* ── Feature 5: Shift Timeline ──────────────────────── */}
+      {timeline.length > 0 && (
+        <div className="card">
+          <SectionLabel>Shift Timeline</SectionLabel>
+          <ShiftTimeline events={timeline} maxItems={8} />
+          <p className="text-xs text-surface-200 mt-3 italic">
+            Events marked "demo" are seeded from current machine state for demonstration purposes.
+          </p>
+        </div>
+      )}
 
-function PredBlock({ title, value, sub, status }) {
-  const color = {
-    NORMAL: 'border-green-700/40 bg-green-900/10',
-    CAUTION: 'border-amber-700/40 bg-amber-900/10',
-    CRITICAL: 'border-red-700/40 bg-red-900/10',
-    ANOMALY: 'border-red-700/40 bg-red-900/10',
-    HIGH: 'border-red-700/40 bg-red-900/10',
-    GOOD: 'border-green-700/40 bg-green-900/10',
-    ATTENTION: 'border-amber-700/40 bg-amber-900/10',
-    MEDIUM: 'border-amber-700/40 bg-amber-900/10',
-  }[status?.toUpperCase()] || 'border-surface-500 bg-surface-600'
-
-  return (
-    <div className={`border rounded-lg p-3 space-y-1 ${color}`}>
-      <div className="text-xs text-surface-100 uppercase tracking-wider">{title}</div>
-      <div className="font-semibold text-white">{value}</div>
-      {sub && <div className="text-xs text-surface-100">{sub}</div>}
+      {/* ── Feature 7: Model Transparency ─────────────────── */}
+      {transparency && <ModelTransparencyPanel data={transparency} />}
     </div>
   )
 }

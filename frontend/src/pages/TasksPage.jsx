@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Clock, TrendingUp, TrendingDown, Minus, CloudRain, AlertTriangle } from 'lucide-react'
-import { getTaskETA, getXAITask, getCurrentTask } from '../api/client.js'
+import { getTaskETA, getXAITask, getCurrentTask, getWhatIf } from '../api/client.js'
 import ScoreRing from '../components/ScoreRing.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import ErrorState from '../components/ErrorState.jsx'
+import AttributionFactorBar from '../components/AttributionFactorBar.jsx'
+import ActionCard from '../components/ActionCard.jsx'
+import WhatIfPanel from '../components/WhatIfPanel.jsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 export default function TasksPage({ machineId }) {
   const [taskEta, setTaskEta] = useState(null)
   const [xai, setXai]         = useState(null)
+  const [whatIf, setWhatIf]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
 
@@ -18,14 +22,15 @@ export default function TasksPage({ machineId }) {
     try {
       const cur = await getCurrentTask(machineId)
       if (!cur || cur.message) {
-        setTaskEta(null); setXai(null)
+        setTaskEta(null); setXai(null); setWhatIf(null)
         setLoading(false); return
       }
-      const [eta, x] = await Promise.all([
+      const [eta, x, wi] = await Promise.all([
         getTaskETA(cur.task_id),
         getXAITask(cur.task_id),
+        getWhatIf(machineId, cur.task_id),
       ])
-      setTaskEta(eta); setXai(x)
+      setTaskEta(eta); setXai(x); setWhatIf(wi)
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -102,26 +107,20 @@ export default function TasksPage({ machineId }) {
           <ETABlock label="Upper Bound"       value={`${eta.upper_bound_min?.toFixed(0)} min`} />
         </div>
 
-        {/* XAI factors */}
+        {/* XAI factors — Feature 1 */}
         <div className="card space-y-3">
-          <div className="section-title">Why? — XAI Explanation</div>
+          <div className="section-title">Why? — Model Attribution</div>
           {xai?.explanation && <p className="text-xs text-surface-100 leading-relaxed">{xai.explanation}</p>}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {xai?.top_factors?.filter(f => f.impact > 0).map((f, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-300">{f.feature}</span>
-                  <span className="text-surface-100">{f.value}</span>
-                </div>
-                <div className="h-1.5 bg-surface-500 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${f.direction === 'increase' ? 'bg-red-500' : 'bg-green-500'}`}
-                    style={{ width: `${Math.min(100, f.impact * 8)}%` }}
-                  />
-                </div>
-              </div>
+              <AttributionFactorBar key={i} factor={f} />
             ))}
           </div>
+          {xai?.attribution_note && (
+            <p className="text-xs text-surface-200 italic">{xai.attribution_note}</p>
+          )}
+          {/* Feature 2 — Action */}
+          <ActionCard action={xai?.recommended_action} title="What Should I Do?" />
         </div>
 
         {/* Weather overlap */}
@@ -169,6 +168,8 @@ export default function TasksPage({ machineId }) {
           </ResponsiveContainer>
         </div>
       )}
+      {/* Feature 6 — Advanced What-If */}
+      {whatIf && <WhatIfPanel data={whatIf} />}
     </div>
   )
 }

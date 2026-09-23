@@ -48,3 +48,12 @@ export const getAllTraining     = ()    => api.get('/training').then(r => r.data
 
 // ── Copilot ───────────────────────────────────────────────────
 export const sendCopilotMessage = (data) => api.post('/copilot/chat', data).then(r => r.data)
+
+// ── Intelligence (new features) ──────────────────────────────
+export const getWhatIf             = (id, tid) => api.get(`/intelligence/whatif/${id}`, { params: tid ? { task_id: tid } : {} }).then(r => r.data)
+export const getModelTransparency  = ()         => api.get('/intelligence/transparency').then(r => r.data)
+export const getFleetAudit         = ()         => api.get('/intelligence/fleet-audit').then(r => r.data)
+export const getSafetyCounterfactual = (id)     => api.get(`/intelligence/safety-counterfactual/${id}`).then(r => r.data)
+export const getTimeline           = (id)       => api.get(`/intelligence/timeline/${id}`).then(r => r.data)
+export const submitFeedback        = (id, data) => api.post(`/intelligence/feedback/${id}`, data).then(r => r.data)
+export const getFeedbackComparison = (id)       => api.get(`/intelligence/feedback/${id}/comparison`).then(r => r.data)

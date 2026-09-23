@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Zap, RefreshCw } from 'lucide-react'
 import { sendCopilotMessage } from '../api/client.js'
+import EvidencePanel from '../components/EvidencePanel.jsx'
 import clsx from 'clsx'
 
 const QUICK_ACTIONS = [
@@ -48,6 +49,9 @@ function Message({ msg }) {
             ))}
           </div>
         )}
+
+        {/* Feature 10 — Evidence panel */}
+        {!isUser && msg.evidence && <EvidencePanel evidence={msg.evidence} />}
       </div>
     </div>
   )
@@ -80,6 +84,7 @@ export default function CopilotPage({ machineId }) {
         role: 'assistant',
         content: res.response,
         tools_called: res.tools_called,
+        evidence: res.evidence,
       }])
     } catch (e) {
       setMessages(m => [...m, {

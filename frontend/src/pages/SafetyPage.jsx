@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { ShieldCheck, ShieldAlert, ShieldX, Info } from 'lucide-react'
-import { getSafety } from '../api/client.js'
+import { getSafety, getSafetyCounterfactual } from '../api/client.js'
 import ScoreRing from '../components/ScoreRing.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import ErrorState from '../components/ErrorState.jsx'
+import CounterfactualCard from '../components/CounterfactualCard.jsx'
 
 const SEV_ICON = {
   CRITICAL: ShieldX,
@@ -24,12 +25,19 @@ const SEV_COLOR = {
 
 export default function SafetyPage({ machineId }) {
   const [safety, setSafety] = useState(null)
+  const [cf, setCf]         = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState(null)
 
   const load = async () => {
     setLoading(true); setError(null)
-    try { setSafety(await getSafety(machineId)) }
+    try {
+      const [s, counterfactual] = await Promise.all([
+        getSafety(machineId),
+        getSafetyCounterfactual(machineId),
+      ])
+      setSafety(s); setCf(counterfactual)
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -133,6 +141,9 @@ export default function SafetyPage({ machineId }) {
           Current score: <span className="text-cat-500 font-bold">{score}</span>
         </div>
       </div>
+
+      {/* Feature 9 — Safety Counterfactual */}
+      {cf && <CounterfactualCard data={cf} />}
     </div>
   )
 }

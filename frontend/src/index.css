@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  body {
+    @apply bg-surface-900 text-gray-100 font-sans antialiased;
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-800; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-400 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-300; }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-700 border border-surface-500 rounded-xl p-5;
+  }
+
+  .card-sm {
+    @apply bg-surface-700 border border-surface-500 rounded-lg p-4;
+  }
+
+  .badge-normal   { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-green-900/40 text-green-400 border border-green-800/50; }
+  .badge-caution  { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-amber-900/40 text-amber-400 border border-amber-800/50; }
+  .badge-critical { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-red-900/40 text-red-400 border border-red-800/50; }
+  .badge-info     { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-blue-900/40 text-blue-400 border border-blue-800/50; }
+
+  .kpi-card {
+    @apply card flex flex-col gap-2;
+  }
+
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-widest text-surface-100 mb-3;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-cat-500 text-surface-900 font-semibold rounded-lg hover:bg-cat-400 transition-colors text-sm;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-surface-500 text-gray-200 font-medium rounded-lg hover:bg-surface-400 transition-colors text-sm border border-surface-400;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-red-700 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-sm;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-surface-100 hover:bg-surface-600 hover:text-gray-100 transition-colors;
+  }
+
+  .nav-link.active {
+    @apply bg-surface-600 text-cat-500 border-l-2 border-cat-500;
+  }
+
+  .input {
+    @apply w-full bg-surface-600 border border-surface-400 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-surface-200 focus:outline-none focus:border-cat-500 transition-colors;
+  }
+}
+
+/* Score ring animations */
+@keyframes spin-slow { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+
+/* Pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
